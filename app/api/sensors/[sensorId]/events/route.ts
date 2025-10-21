@@ -7,14 +7,18 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const { searchParams } = new URL(request.url)
     const startDate = searchParams.get("startDate")
     const endDate = searchParams.get("endDate")
+    const page = Number.parseInt(searchParams.get("page") || "1") || 1
+    const pageSize = Number.parseInt(searchParams.get("pageSize") || "10") || 10
 
-    const events = await dbOperations.getConnectionEvents(
+    const { items, total } = await dbOperations.getConnectionEventsPaginated(
       sensorId,
+      page,
+      pageSize,
       startDate ? new Date(startDate) : undefined,
       endDate ? new Date(endDate) : undefined,
     )
 
-    return NextResponse.json({ events })
+    return NextResponse.json({ events: items, total, page, pageSize })
   } catch (error) {
     console.error("[v0] Error fetching connection events:", error)
     return NextResponse.json({ error: "Failed to fetch connection events" }, { status: 500 })

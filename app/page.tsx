@@ -10,6 +10,7 @@ import { SensorSelector } from "@/components/sensor-selector"
 import { ExportDialog } from "@/components/export-dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent } from "@/components/ui/card"
+// (pagination controls removed from sensors grid)
 import type { SensorWithLastReading } from "@/lib/types"
 import { MapPin, Activity } from "lucide-react"
 
@@ -27,48 +28,9 @@ export default function Home() {
   const [selectedSensorId, setSelectedSensorId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [wsConnected, setWsConnected] = useState(false)
+  // Paginación removida en la grilla de sensores; se aplica por sección de tablas
 
-  useEffect(() => {
-    // Open a WebSocket for live updates (optional for dashboard view)
-    const url = new URL(typeof window !== "undefined" ? window.location.href : "http://localhost")
-    url.protocol = url.protocol === "https:" ? "wss:" : "ws:"
-    url.pathname = "/api/ws"
-    const ws = new WebSocket(url.toString())
-    ws.onopen = () => setWsConnected(true)
-    ws.onclose = () => setWsConnected(false)
-    ws.onerror = () => setWsConnected(false)
-    ws.onmessage = (evt) => {
-      try {
-        const data = JSON.parse(evt.data as string)
-        if (data?.type === "reading:update" && data.sensorId) {
-          // Optionally update UI instantly if server broadcasts
-          setSensors((prev) =>
-            prev.map((s) =>
-              s.id === data.sensorId
-                ? {
-                    ...s,
-                    lastReading: {
-                      id: data.id || `${data.sensorId}-${Date.now()}`,
-                      sensorId: data.sensorId,
-                      timestamp: new Date(),
-                      temperature: data.temperature,
-                      humidity: data.humidity,
-                      pm25: data.pm25,
-                    },
-                  }
-                : s,
-            ),
-          )
-        }
-      } catch {}
-    }
-    return () => {
-      try {
-        ws.close()
-      } catch {}
-    }
-  }, [])
+  // (sin paginación de tarjetas)
 
   useEffect(() => {
     const fetchSensors = async () => {
@@ -103,7 +65,7 @@ export default function Home() {
     }
 
     fetchSensors()
-    const interval = setInterval(fetchSensors, 5000)
+  const interval = setInterval(fetchSensors, 5000)
 
     return () => clearInterval(interval)
   }, [selectedSensorId])
@@ -116,9 +78,6 @@ export default function Home() {
 
       <main className="container mx-auto px-4 py-6">
         <div className="mb-4 text-sm">
-          <span className={wsConnected ? "text-green-600" : "text-muted-foreground"}>
-            {wsConnected ? "● WebSocket conectado" : "○ WebSocket desconectado"}
-          </span>
         </div>
         {loading ? (
           <div className="flex h-[400px] items-center justify-center">
@@ -178,7 +137,15 @@ export default function Home() {
               </h2>
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {sensors.map((sensor) => (
-                  <SensorStatusCard key={sensor.id} sensor={sensor} />
+                  <SensorStatusCard
+                    key={sensor.id}
+                    sensor={sensor}
+                    onDeleted={(id) => {
+                      // Remueve inmediatamente de UI; el polling también lo confirmará
+                      setSensors((prev) => prev.filter((s) => s.id !== id))
+                      if (selectedSensorId === id) setSelectedSensorId(null)
+                    }}
+                  />
                 ))}
               </div>
             </div>

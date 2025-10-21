@@ -8,6 +8,9 @@ import type { ConnectionEvent } from "@/lib/types"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { Wifi, WifiOff } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination"
+import { Spinner } from "@/components/ui/spinner"
 
 interface ConnectionEventsTableProps {
   sensorId: string
@@ -17,11 +20,16 @@ interface ConnectionEventsTableProps {
 export function ConnectionEventsTable({ sensorId, sensorName }: ConnectionEventsTableProps) {
   const [events, setEvents] = useState<ConnectionEvent[]>([])
   const [loading, setLoading] = useState(true)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
+  const [total, setTotal] = useState(0)
+  const [pending, setPending] = useState(false)
 
   useEffect(() => {
     const fetchEvents = async () => {
       try {
-        const response = await fetch(`/api/sensors/${sensorId}/events`)
+        setPending(true)
+        const response = await fetch(`/api/sensors/${sensorId}/events?page=${page}&pageSize=${pageSize}`)
         const data = await response.json()
         setEvents(
           data.events.map((e: any) => ({
@@ -29,10 +37,12 @@ export function ConnectionEventsTable({ sensorId, sensorName }: ConnectionEvents
             timestamp: new Date(e.timestamp),
           })),
         )
+        setTotal(data.total ?? 0)
       } catch (error) {
         console.error("[v0] Error fetching events:", error)
       } finally {
         setLoading(false)
+        setPending(false)
       }
     }
 
@@ -40,13 +50,19 @@ export function ConnectionEventsTable({ sensorId, sensorName }: ConnectionEvents
     const interval = setInterval(fetchEvents, 5000) // Refresh every 5 seconds
 
     return () => clearInterval(interval)
-  }, [sensorId])
+  }, [sensorId, page, pageSize])
+
+  useEffect(() => {
+    setPage(1)
+  }, [sensorId, pageSize])
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Historial de Conexiones - {sensorName}</CardTitle>
-        <CardDescription>Registro de conexiones y desconexiones del sensor</CardDescription>
+        <CardDescription>
+          Mostrando {events.length > 0 ? (page - 1) * pageSize + 1 : 0}-{Math.min(page * pageSize, total)} de {total}
+        </CardDescription>
       </CardHeader>
       <CardContent>
         {loading ? (
@@ -55,6 +71,28 @@ export function ConnectionEventsTable({ sensorId, sensorName }: ConnectionEvents
           <p className="text-center text-muted-foreground">No hay eventos registrados</p>
         ) : (
           <div className="overflow-x-auto">
+            <div className="mb-3 flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">Mostrar</span>
+              <Select
+                value={String(pageSize)}
+                onValueChange={(val) => {
+                  setPageSize(parseInt(val, 10))
+                  setPage(1)
+                }}
+              >
+                <SelectTrigger className="w-[110px]">
+                  <SelectValue placeholder="Cantidad" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="10">10</SelectItem>
+                  <SelectItem value="25">25</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                  <SelectItem value="100">100</SelectItem>
+                </SelectContent>
+              </Select>
+              <span className="text-sm text-muted-foreground">por página</span>
+              {pending && <Spinner className="ml-2 size-4 text-muted-foreground" />}
+            </div>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -88,6 +126,48 @@ export function ConnectionEventsTable({ sensorId, sensorName }: ConnectionEvents
                 ))}
               </TableBody>
             </Table>
+
+            {Math.ceil(total / pageSize) > 1 && (
+              <Pagination className="mt-4">
+                <PaginationContent>
+                  <PaginationItem>
+                    <PaginationPrevious
+                      href="#"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        setPage((p) => Math.max(1, p - 1))
+                      }}
+                    />
+                  </PaginationItem>
+                  {Array.from({ length: Math.ceil(total / pageSize) }, (_, i) => i + 1)
+                    .slice(Math.max(0, page - 3), Math.max(5, page + 2))
+                    .map((p) => (
+                      <PaginationItem key={p}>
+                        <PaginationLink
+                          href="#"
+                          isActive={p === page}
+                          onClick={(e) => {
+                            e.preventDefault()
+                            setPage(p)
+                          }}
+                        >
+                          {p}
+                        </PaginationLink>
+                      </PaginationItem>
+                    ))}
+                  <PaginationItem>
+                    <PaginationNext
+                      href="#"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        const totalPages = Math.ceil(total / pageSize)
+                        setPage((p) => Math.min(totalPages, p + 1))
+                      }}
+                    />
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            )}
           </div>
         )}
       </CardContent>

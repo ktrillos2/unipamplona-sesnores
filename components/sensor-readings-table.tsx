@@ -7,6 +7,9 @@ import { Badge } from "@/components/ui/badge"
 import type { SensorReading } from "@/lib/types"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination"
+import { Spinner } from "@/components/ui/spinner"
 
 interface SensorReadingsTableProps {
   sensorId: string
@@ -16,11 +19,16 @@ interface SensorReadingsTableProps {
 export function SensorReadingsTable({ sensorId, sensorName }: SensorReadingsTableProps) {
   const [readings, setReadings] = useState<SensorReading[]>([])
   const [loading, setLoading] = useState(true)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
+  const [total, setTotal] = useState(0)
+  const [pending, setPending] = useState(false)
 
   useEffect(() => {
     const fetchReadings = async () => {
       try {
-        const response = await fetch(`/api/sensors/${sensorId}/readings?limit=50`)
+        setPending(true)
+        const response = await fetch(`/api/sensors/${sensorId}/readings?page=${page}&pageSize=${pageSize}`)
         const data = await response.json()
         setReadings(
           data.readings.map((r: any) => ({
@@ -28,10 +36,12 @@ export function SensorReadingsTable({ sensorId, sensorName }: SensorReadingsTabl
             timestamp: new Date(r.timestamp),
           })),
         )
+        setTotal(data.total ?? 0)
       } catch (error) {
         console.error("Error fetching readings:", error)
       } finally {
         setLoading(false)
+        setPending(false)
       }
     }
 
@@ -39,7 +49,12 @@ export function SensorReadingsTable({ sensorId, sensorName }: SensorReadingsTabl
     const interval = setInterval(fetchReadings, 5000)
 
     return () => clearInterval(interval)
-  }, [sensorId])
+  }, [sensorId, page, pageSize])
+
+  // Reset a la primera página cuando cambia el sensor
+  useEffect(() => {
+    setPage(1)
+  }, [sensorId, pageSize])
 
   const getQualityBadge = (pm25: number) => {
     if (pm25 <= 12) return <Badge className="bg-green-500">Buena</Badge>
@@ -53,7 +68,9 @@ export function SensorReadingsTable({ sensorId, sensorName }: SensorReadingsTabl
     <Card>
       <CardHeader>
         <CardTitle>Lecturas de {sensorName}</CardTitle>
-        <CardDescription>Últimas 50 lecturas registradas del sensor</CardDescription>
+        <CardDescription>
+          Mostrando {readings.length > 0 ? (page - 1) * pageSize + 1 : 0}-{Math.min(page * pageSize, total)} de {total}
+        </CardDescription>
       </CardHeader>
       <CardContent>
         {loading ? (
@@ -62,6 +79,29 @@ export function SensorReadingsTable({ sensorId, sensorName }: SensorReadingsTabl
           <p className="py-8 text-center text-muted-foreground">No hay lecturas disponibles</p>
         ) : (
           <div className="overflow-x-auto">
+            <div className="mb-3 flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">Mostrar</span>
+              <Select
+                value={String(pageSize)}
+                onValueChange={(val) => {
+                  setPageSize(parseInt(val, 10))
+                  setPage(1)
+                }}
+              >
+                <SelectTrigger className="w-[110px]">
+                  <SelectValue placeholder="Cantidad" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="10">10</SelectItem>
+                  <SelectItem value="25">25</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                  <SelectItem value="100">100</SelectItem>
+                </SelectContent>
+              </Select>
+              <span className="text-sm text-muted-foreground">por página</span>
+              {pending && <Spinner className="ml-2 size-4 text-muted-foreground" />}
+            </div>
+
             <Table>
               <TableHeader>
                 <TableRow>
@@ -86,6 +126,48 @@ export function SensorReadingsTable({ sensorId, sensorName }: SensorReadingsTabl
                 ))}
               </TableBody>
             </Table>
+
+            {Math.ceil(total / pageSize) > 1 && (
+              <Pagination className="mt-4">
+                <PaginationContent>
+                  <PaginationItem>
+                    <PaginationPrevious
+                      href="#"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        setPage((p) => Math.max(1, p - 1))
+                      }}
+                    />
+                  </PaginationItem>
+                  {Array.from({ length: Math.ceil(total / pageSize) }, (_, i) => i + 1)
+                    .slice(Math.max(0, page - 3), Math.max(5, page + 2))
+                    .map((p) => (
+                      <PaginationItem key={p}>
+                        <PaginationLink
+                          href="#"
+                          isActive={p === page}
+                          onClick={(e) => {
+                            e.preventDefault()
+                            setPage(p)
+                          }}
+                        >
+                          {p}
+                        </PaginationLink>
+                      </PaginationItem>
+                    ))}
+                  <PaginationItem>
+                    <PaginationNext
+                      href="#"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        const totalPages = Math.ceil(total / pageSize)
+                        setPage((p) => Math.min(totalPages, p + 1))
+                      }}
+                    />
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            )}
           </div>
         )}
       </CardContent>

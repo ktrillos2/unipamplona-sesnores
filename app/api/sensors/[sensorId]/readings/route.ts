@@ -5,19 +5,20 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   try {
     const { sensorId } = await params
     const { searchParams } = new URL(request.url)
-    const limit = searchParams.get("limit")
     const startDate = searchParams.get("startDate")
     const endDate = searchParams.get("endDate")
+    const page = Number.parseInt(searchParams.get("page") || "1") || 1
+    const pageSize = Number.parseInt(searchParams.get("pageSize") || "10") || 10
 
-    let readings
+    const { items, total } = await dbOperations.getReadingsBySensorPaginated(
+      sensorId,
+      page,
+      pageSize,
+      startDate ? new Date(startDate) : undefined,
+      endDate ? new Date(endDate) : undefined,
+    )
 
-    if (startDate && endDate) {
-      readings = await dbOperations.getReadingsByDateRange(sensorId, new Date(startDate), new Date(endDate))
-    } else {
-      readings = await dbOperations.getReadingsBySensor(sensorId, limit ? Number.parseInt(limit) : undefined)
-    }
-
-    return NextResponse.json({ readings })
+    return NextResponse.json({ readings: items, total, page, pageSize })
   } catch (error) {
     console.error("[v0] Error fetching readings:", error)
     return NextResponse.json({ error: "Failed to fetch readings" }, { status: 500 })

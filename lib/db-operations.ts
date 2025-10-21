@@ -109,6 +109,26 @@ export const dbOperations = {
     }
   },
 
+  // Eliminar sensor y todo su historial
+  async deleteSensor(sensorId: string): Promise<void> {
+    if (!dbAvailable) {
+      // Eliminar de mocks
+      const idx = mockSensors.findIndex((s) => s.id === sensorId)
+      if (idx >= 0) mockSensors.splice(idx, 1)
+      return
+    }
+
+    try {
+      // Borrar lecturas, eventos y el sensor
+      await db.execute({ sql: "DELETE FROM readings WHERE sensor_id = ?", args: [sensorId] })
+      await db.execute({ sql: "DELETE FROM connection_events WHERE sensor_id = ?", args: [sensorId] })
+      await db.execute({ sql: "DELETE FROM sensors WHERE sensor_id = ?", args: [sensorId] })
+    } catch (error) {
+      console.error("[v0] Database error in deleteSensor:", error)
+      throw error
+    }
+  },
+
   // Obtener un sensor por ID
   async getSensor(sensorId: string): Promise<Sensor | null> {
     if (!dbAvailable) {
@@ -240,6 +260,67 @@ export const dbOperations = {
     }
   },
 
+  // Obtener lecturas paginadas por sensor (con total)
+  async getReadingsBySensorPaginated(
+    sensorId: string,
+    page: number,
+    pageSize: number,
+    startDate?: Date,
+    endDate?: Date,
+  ): Promise<{ items: SensorReading[]; total: number }> {
+    if (!dbAvailable) {
+      const total = 200
+      const start = (page - 1) * pageSize
+      const end = Math.min(start + pageSize, total)
+      const items: SensorReading[] = []
+      for (let i = start; i < end; i++) {
+        items.push({
+          id: `${sensorId}-${i}`,
+          sensorId,
+          temperature: 20 + Math.random() * 10,
+          humidity: 50 + Math.random() * 30,
+          pm25: 10 + Math.random() * 20,
+          timestamp: new Date(Date.now() - i * 60 * 1000),
+        })
+      }
+      return { items, total }
+    }
+
+    try {
+      const args: any[] = [sensorId]
+      let where = "WHERE sensor_id = ?"
+      if (startDate && endDate) {
+        where += " AND timestamp BETWEEN ? AND ?"
+        args.push(startDate.toISOString(), endDate.toISOString())
+      }
+
+      const countRes = await db.execute({ sql: `SELECT COUNT(*) as count FROM readings ${where}`, args })
+      const total = Number(countRes.rows[0].count)
+
+      const offset = (page - 1) * pageSize
+      const listArgs = [...args, pageSize, offset]
+      const listRes = await db.execute({
+        sql: `SELECT * FROM readings ${where} ORDER BY timestamp DESC LIMIT ? OFFSET ?`,
+        args: listArgs,
+      })
+
+      const items = listRes.rows.map((row) => ({
+        id: String(row.id),
+        sensorId: row.sensor_id as string,
+        temperature: row.temperature as number,
+        humidity: row.humidity as number,
+        pm25: row.pm25 as number,
+        timestamp: new Date(row.timestamp as string),
+      }))
+
+      return { items, total }
+    } catch (error) {
+      console.error("[v0] Database error in getReadingsBySensorPaginated, falling back to mock:", error)
+      dbAvailable = false
+      return this.getReadingsBySensorPaginated(sensorId, page, pageSize, startDate, endDate)
+    }
+  },
+
   // Obtener lecturas por rango de fechas
   async getReadingsByDateRange(sensorId: string, startDate: Date, endDate: Date): Promise<SensorReading[]> {
     if (!dbAvailable) {
@@ -362,6 +443,64 @@ export const dbOperations = {
       console.error("[v0] Database error in getConnectionEvents, falling back to mock:", error)
       dbAvailable = false
       return this.getConnectionEvents(sensorId, startDate, endDate)
+    }
+  },
+
+  // Obtener eventos de conexión paginados (con total)
+  async getConnectionEventsPaginated(
+    sensorId: string,
+    page: number,
+    pageSize: number,
+    startDate?: Date,
+    endDate?: Date,
+  ): Promise<{ items: ConnectionEvent[]; total: number }> {
+    if (!dbAvailable) {
+      const total = 42
+      const start = (page - 1) * pageSize
+      const end = Math.min(start + pageSize, total)
+      const items: ConnectionEvent[] = []
+      for (let i = start; i < end; i++) {
+        const isConnect = i % 2 === 0
+        items.push({
+          id: `${sensorId}-evt-${i}`,
+          sensorId,
+          eventType: isConnect ? "connect" : "disconnect",
+          timestamp: new Date(Date.now() - i * 5 * 60 * 1000),
+        })
+      }
+      return { items, total }
+    }
+
+    try {
+      const args: any[] = [sensorId]
+      let where = "WHERE sensor_id = ?"
+      if (startDate && endDate) {
+        where += " AND timestamp BETWEEN ? AND ?"
+        args.push(startDate.toISOString(), endDate.toISOString())
+      }
+
+      const countRes = await db.execute({ sql: `SELECT COUNT(*) as count FROM connection_events ${where}`, args })
+      const total = Number(countRes.rows[0].count)
+
+      const offset = (page - 1) * pageSize
+      const listArgs = [...args, pageSize, offset]
+      const listRes = await db.execute({
+        sql: `SELECT * FROM connection_events ${where} ORDER BY timestamp DESC LIMIT ? OFFSET ?`,
+        args: listArgs,
+      })
+
+      const items = listRes.rows.map((row) => ({
+        id: String(row.id),
+        sensorId: row.sensor_id as string,
+        eventType: ((row.event_type as string) === "disconnect" ? "disconnect" : "connect") as "connect" | "disconnect",
+        timestamp: new Date(row.timestamp as string),
+      }))
+
+      return { items, total }
+    } catch (error) {
+      console.error("[v0] Database error in getConnectionEventsPaginated, falling back to mock:", error)
+      dbAvailable = false
+      return this.getConnectionEventsPaginated(sensorId, page, pageSize, startDate, endDate)
     }
   },
 }
